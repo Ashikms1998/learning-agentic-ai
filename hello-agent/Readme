@@ -1,0 +1,175 @@
+ 🛠️ Step 1.5: Get Ollama running
+
+  Part A — Install the Ollama app (this is the "server"):
+
+  1. Go to ollama.com/download → download the Windows installer
+  2. Run it (normal "next, next, finish" install)
+
+  Part A — Install the Ollama app (this is the "server"):
+
+  1. Go to ollama.com/download → download the Windows installer
+  2. Run it (normal "next, next, finish" install)
+  3. After installing, it runs quietly in the background (you'll see a little llama icon in your system tray)
+
+  Part B — Download a model (this is the "brain"). Back in your terminal, type:
+
+  ollama pull llama3.2
+
+  This downloads Llama 3.2 — a small (~2 GB) but capable model from Meta. It runs on most laptops and, importantly, supports tool-calling, which 
+  we'll need when we build the real agent. The download takes a few minutes.
+
+  Part C — Test it works (talk to the model right in your terminal):
+
+  ollama run llama3.2
+
+  You'll get a >>> prompt. Type something like hello, who are you? and watch it answer — that's an AI model running on your own machine, offline.
+  🎉 Type /bye to exit.
+
+  Part D — Install the JS client so our code can talk to it:
+
+  npm install ollama
+
+  This ollama npm package is a clean wrapper around that localhost:11434 server — same idea as axios wrapping HTTP calls, but purpose-built for  
+  Ollama.
+
+ 💻 Step 2: Your first "Hello, Agent"
+
+  This is a plain chat with the model — no tools yet. We crawl before we walk. Create a new file in your hello-agent folder called hello.js, and
+  type this in (don't paste — typing it makes it stick):
+  
+  import ollama from 'ollama'
+
+  const response = await ollama.chat({
+    model: 'llama3.2',
+    messages: [
+      { role: 'user', content: 'Hello! In one sentence, who are you?' }
+    ],
+  })
+
+  console.log(response.message.content)
+
+  🔍 Every line, explained
+
+  import ollama from 'ollama'
+  Brings in the package you installed. ollama is now an object with methods that talk to your local server — just like import express from       
+  'express'.
+
+  const response = await ollama.chat({ ... })
+  The whole game is right here. ollama.chat(...) sends your message to the model and waits for a reply. It's an async call (it goes to
+  localhost:11434 and back), so we await it — exactly like awaiting a fetch or a Mongo query. (await works at the top level here because we set  
+  "type": "module".)
+
+  model: 'llama3.2',
+  Which brain to use — the model you pulled earlier. If you'd pulled others, you'd pick here.
+
+  messages: [
+    { role: 'user', content: 'Hello! In one sentence, who are you?' }
+  ],
+  This is the most important concept to absorb. You don't send a plain string — you send an array of messages, each with a role and content.     
+  Right now there's one message from you (role: 'user').
+
+  Why an array? Because this is how the model "remembers" a conversation — every back-and-forth is another item in this list. The roles are:     
+  - user → you
+  - assistant → the AI
+  - system → instructions that shape the AI's behavior (we'll use this later)
+
+  Memorize this shape — it's identical across Ollama, Claude, OpenAI, everything. Learn it once, use it everywhere.
+
+  console.log(response.message.content)
+  The model's reply comes back as an object. The actual text is at response.message.content — we just print it.
+
+
+  Step 3
+
+
+  🪄 Step 3: The magic moment — give it a tool
+  
+  Right now your model is a chatbot — it can only talk. Watch what happens when we hand it a tool.
+
+  Remember the key idea I told you earlier: the model can't run your code — it can only ask you to. You're about to see that happen with your own
+  eyes.
+
+  Create a new file called agent.js and type this in:
+
+  import ollama from 'ollama'
+
+  // 1. Describe a tool the model is ALLOWED to use
+  const tools = [
+    {
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description: 'Get the current weather for a given city',
+        parameters: {
+          type: 'object',
+          properties: {
+            city: { type: 'string', description: 'The name of the city' },
+          },
+          required: ['city'],
+        },
+      },
+    },
+  ]
+
+  // 2. Ask a question that NEEDS the tool
+  const response = await ollama.chat({
+    model: 'llama3.2',
+    messages: [
+      { role: 'user', content: "What's the weather in Tokyo right now?" },
+    ],
+    tools: tools,
+  })
+
+  // 3. See what the model decided to do
+  console.log(JSON.stringify(response.message.tool_calls, null, 2))
+
+  🔍 What's new here, explained
+
+  The tools array — this is just a description of a function, written as JSON. We are NOT giving the model the actual code. We're handing it a   
+  menu that says "a tool called get_weather exists, here's what it does, and it needs a city." Notice the pieces:
+
+  - name → what the tool is called
+  - description → this is critical — the model reads this plain-English sentence to decide when this tool is useful. Good descriptions = smart   
+  agents.
+  - parameters → what inputs the tool needs, written in JSON Schema (the same kind of schema you'd write for validating an API body or a Mongoose
+  model). Here: one required city string.
+
+  tools: tools — we pass that menu along with the question. Now the model knows it has the option to use a tool.
+
+  response.message.tool_calls — here's the payoff. When you give the model tools, instead of replying with text, it can reply with a request to  
+  call a tool. That request lands in tool_calls.
+
+  import ollama from 'ollama';
+
+const tools =[
+    {
+        type:"function",
+        function:{
+            name:"getWeather",
+            description:"Get the weather for a given city",
+            parameters:{
+                type:"object",
+                properties:{
+                    city:{
+                        type:"string",
+                        description:"The city to get the weather for",
+
+                    },
+                },
+                required:["city"],
+            }
+        }
+    }
+]
+
+const response = await ollama.chat({
+    model:"llama3.2",
+    messages:[
+        {role:"user",content:"What's the weather in Hyderabad?"}
+    ],
+    tools:tools,
+})
+
+console.log(JSON.stringify(response.message.tool_calls,null,2))
+
+
