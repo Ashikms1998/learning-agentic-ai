@@ -1,84 +1,61 @@
-import ollama from 'ollama'
+import { ChatOllama } from '@langchain/ollama'
+import { HumanMessage } from '@langchain/core/messages'
+import { tool } from '@langchain/core/tools'
+import { createReactAgent } from '@langchain/langgraph/prebuilt'
+import { z } from 'zod'
 
-// ---- The real functions (the "hands") ----
-function getWeather(city) {
-  return `The weather in ${city} is sunny, 25°C.`
-}
-
-function recommendClothing(temperatureC) {
-  if (temperatureC <= 10) return 'Wear a warm jacket and a scarf.'
-  if (temperatureC <= 22) return 'A light sweater or hoodie is perfect.'
-  return 'T-shirt and shorts weather — dress light.'
-}
-
-// ---- A dispatcher: maps a tool NAME to the real function ----
-function runTool(name, args) {
-  if (name === 'getWeather') return getWeather(args.city)
-  if (name === 'recommendClothing') return recommendClothing(args.temperatureC)
-  return `Unknown tool: ${name}`
-}
-
-// ---- The tool menu (now TWO tools) ----
-const tools = [
-  {
-    type: 'function',
-    function: {
-      name: 'getWeather',
-      description: 'Get the current weather for a given city',
-      parameters: {
-        type: 'object',
-        properties: { city: { type: 'string', description: 'The city name' } },
-        required: ['city'],
-      },
-    },
+// 1. Define a tool — the function + its description, together
+const getWeather = tool(
+  async ({ city }) => {
+    return `The weather in ${city} is sunny, 25°C.`
   },
   {
-    type: 'function',
-    function: {
-      name: 'recommendClothing',
-      description: 'Recommend what to wear based on the temperature in Celsius',
-      parameters: {
-        type: 'object',
-        properties: {
-          temperatureC: { type: 'number', description: 'Temperature in Celsius' },
-        },
-        required: ['temperatureC'],
-      },
-    },
-  },
-]
-
-// ---- The conversation ----
-const messages = [
-  {
-    role: 'system',
-    content:
-      'You are a helpful assistant. Use the tools to answer. Use ONLY the data the tools return — do not invent details.',
-  },
-  { role: 'user', content: 'I live in Hyderabad. What should I wear today?' },
-]
-
-// ---- THE AGENT LOOP ----
-while (true) {
-  const response = await ollama.chat({ model: 'qwen2.5:7b', messages, tools })
-  messages.push(response.message)
-
-  // No tool calls? The model is done thinking — print the answer and STOP.
-  if (!response.message.tool_calls?.length) {
-    console.log('\n💬 Final answer:')
-    console.log(response.message.content)
-    break
+    name: 'getWeather',
+    description: 'Get the current weather for a given city',
+    schema: z.object({
+      city: z.string().describe('The city name'),
+    }),
   }
+)
 
-  // Otherwise: run every tool the model asked for, feed results back, loop again.
-  for (const call of response.message.tool_calls) {
-    const result = runTool(call.function.name, call.function.arguments)
-    console.log(`🔧 ${call.function.name}(${JSON.stringify(call.function.arguments)}) → ${result}`)
-    messages.push({
-      role: 'tool',
-      tool_name: call.function.name,
-      content: result,
-    })
-  }
-  // loop repeats: model now SEES the tool results and decides what to do next
-}
+// 2. The model
+const model = new ChatOllama({ model: 'qwen2.5:7b' })
+
+// 3. Build an agent — model + tools, and LangChain wires up the LOOP
+const agent = createReactAgent({
+  llm: model,
+  tools: [getWeather],
+})
+
+// 4. Run it
+const result = await agent.invoke({
+  messages: [new HumanMessage("What's the weather in Hyderabad?")],
+})
+
+// 5. The final answer is the last message
+console.log(result.messages.at(-1).content)
+
+
+
+
+
+
+
+
+
+
+// 🔍 What changed — and what it means
+
+// tool(fn, {...}) — this bundles your function and its description into one object. Compare to raw     
+// tool(fn, {...}) — this bundles your function and its description into one object. Compare to raw     
+// Ollama, where you wrote the function and the JSON schema separately. Here z.object({ city: z.string()
+// }) is the schema — zod generates the JSON Schema for you. Cleaner, but same concept.
+
+// createReactAgent({ llm, tools }) — 🤯 this one line replaces your entire while loop. "ReAct" = Reason
+// + Act, the exact THINK→ACT→OBSERVE pattern you built by hand. LangChain runs all of it internally:   
+// calls the model, sees tool_calls, runs your getWeather, feeds the result back, loops until done. You 
+// wrote ~40 lines for this; now it's one function — and you know exactly what it's doing inside.
+
+// agent.invoke({ messages: [...] }) — same universal .invoke(), but an agent returns the whole 
+// conversation in result.messages. The final answer is the last one, hence
+// result.messages.at(-1).content.
