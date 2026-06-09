@@ -1,13 +1,26 @@
 import { ChatOllama } from '@langchain/ollama'
 import { HumanMessage, SystemMessage } from '@langchain/core/messages'
 import readline from 'node:readline/promises'
+import {readFile,writeFile } from 'node:fs/promises'
 
+
+const MEMORY_FILE = "memory.json"
 // 1. The model
 const model = new ChatOllama({ model: 'qwen2.5:7b' })
 
+let longTermMemory
+
+try {
+    longTermMemory = JSON.parse(await readFile(MEMORY_FILE,'utf-8')).facts
+} catch (error) {
+    longTermMemory = "Nothing known about the user yet"
+}
+
+
 // 2. Short-term memory — the conversation, starting with a system instruction
 const history = [
-  new SystemMessage('You are a friendly, concise assistant.'),
+  `You are a friendly assistant. What you remember about the user from past
+  chats:\n${longTermMemory}`
 ]
 
 // 3. A way to read what you type in the terminal
@@ -16,16 +29,14 @@ const rl = readline.createInterface({
   output: process.stdout,
 })
 
-console.log('🤖 Chat started! Type a message (or "exit" to quit).\n')
-
+console.log('🧠 Loaded long-term memory:', longTermMemory, '\n')
+console.log('🤖 Chat started! (type "exit" to quit)\n')
 // 4. THE CHAT LOOP
 while (true) {
   const userInput = await rl.question('You: ')
 
-  if (userInput.toLowerCase() === 'exit') {
-    console.log('👋 Bye!')
+  if (userInput.toLowerCase() === 'exit')
     break
-  }
 
   history.push(new HumanMessage(userInput))   // remember what you said
   const response = await model.invoke(history) // send the WHOLE history
@@ -33,6 +44,15 @@ while (true) {
 
   console.log('Bot:', response.content, '\n')
 }
+
+console.log('💾 Saving what I learned about you...')
+
+const summary = await model.invoke([
+    ...history,new HumanMessage('Write an updated short list of durable facts about the user (name, interests, goals), combining with what you already knew. Reply with ONLY the facts.')
+])
+
+await writeFile(MEMORY_FILE,JSON.stringify({facts:summary.content},null,2))
+console.log('🧠 New long-term memory saved:', summary.content)
 
 rl.close()
 
