@@ -1,45 +1,50 @@
 import { ChatOllama } from '@langchain/ollama'
-  import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages'
+import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages'
+import { z } from 'zod'
 
-  const model = new ChatOllama({ model: 'qwen2.5:7b' })
+const model = new ChatOllama({ model: 'qwen2.5:7b' })
 
-  const fullHistory = [
-    new SystemMessage('You are a helpful assistant.'),
-    new HumanMessage('My name is Ashik.'),
-    new AIMessage('Nice to meet you, Ashik!'),
-    new HumanMessage('I live in Goa.'),
-    new AIMessage('Goa is beautiful!'),
-    new HumanMessage('I love JavaScript.'),
-    new AIMessage('JavaScript is great!'),
-    new HumanMessage('I am learning agentic AI.'),
-    new AIMessage('That is exciting!'),
-    new HumanMessage("What's my name?"),
-  ]
+const fullHistory = [
+  new SystemMessage('You are a helpful assistant.'),
+  new HumanMessage('My name is Ashik.'),
+  new AIMessage('Nice to meet you, Ashik!'),
+  new HumanMessage('I live in Goa.'),
+  new AIMessage('Goa is beautiful!'),
+  new HumanMessage('I love JavaScript.'),
+  new AIMessage('JavaScript is great!'),
+  new HumanMessage('I am learning agentic AI.'),
+  new AIMessage('That is exciting!'),
+  new HumanMessage("What's my name?"),
+]
 
-  const system = fullHistory[0]
-  const recent = fullHistory.slice(-3)        // keep last 3 verbatim
-  const old = fullHistory.slice(1, -3)         // compress the middle
+const system = fullHistory[0]
+const recent = fullHistory.slice(-3)
+const old = fullHistory.slice(1, -3)
 
-  // 1. Summarize the OLD turns into one short note
-  const summaryResp = await model.invoke([
-    new HumanMessage(
-      'Summarize the key facts about the user from these messages in one short line:\n' +    
-      old.map(m => m.content).join('\n')
-    ),
-  ])
-  const summary = summaryResp.content
+// Summarize OLD turns into GUARANTEED labeled facts (structured output)
+const factSchema = z.object({
+  name: z.string().describe("the user's name"),
+  location: z.string().describe('where the user lives'),
+  interests: z.string().describe("the user's interests"),
+})
+const summarizer = model.withStructuredOutput(factSchema)
+const facts = await summarizer.invoke(
+  'Extract the user details from these messages:\n' + old.map(m => m.content).join('\n')   
+)
 
-  // 2. Rebuild context = system + summary + recent (small AND keeps what matters)
-  const smart = [
-    system,
-    new SystemMessage(`Summary of earlier chat: ${summary}`),
-    ...recent,
-  ]
+const summary = `Name: ${facts.name}, Location: ${facts.location}, Interests:
+${facts.interests}`
 
-  const result = await model.invoke(smart)
-  console.log('🧠 Summary kept:', summary)
-  console.log('SMART →', result.content, '| input tokens:',
-  result.usage_metadata.input_tokens)
+const smart = [
+  system,
+  new SystemMessage(`Known facts about the user — ${summary}`),
+  ...recent,
+]
+
+const result = await model.invoke(smart)
+console.log('🧠 Facts:', facts)
+console.log('SMART →', result.content, '| input tokens:',
+result.usage_metadata.input_tokens)
 
 
 
